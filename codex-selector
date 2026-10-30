@@ -28,6 +28,13 @@ ALIBABA_MODEL = "qwen3.8-flash"
 ALIBABA_PROVIDER = "alibaba"
 ALIBABA_KEY_NAME = "ALIBABA_KEY"
 ALIBABA_URL = "http://10.28.15.77:4000/v1"
+ALIBABA_PROVIDER_TABLE = """[model_providers.alibaba]
+name = "Alibaba via LiteLLM ThinkStation"
+base_url = "http://10.28.15.77:4000/v1"
+env_key = "ALIBABA_KEY"
+wire_api = "responses"
+requires_openai_auth = false
+"""
 TOP_LEVEL_KEYS = {
     "model",
     "model_provider",
@@ -67,6 +74,18 @@ def render_config(source: str, mode: str) -> str:
             'model_reasoning_effort = "medium"\n',
             "\n",
         ]
+        # Remove alibaba provider table if present
+        new_remainder = []
+        skip = False
+        for line in remainder:
+            if line.strip() == "[model_providers.alibaba]":
+                skip = True
+                continue
+            if skip and line.startswith("[") and not line.startswith("[model_providers.alibaba]"):
+                skip = False
+            if not skip:
+                new_remainder.append(line)
+        remainder = new_remainder
     else:
         header = [
             f'model = "{ALIBABA_MODEL}"\n',
@@ -75,6 +94,10 @@ def render_config(source: str, mode: str) -> str:
             'model_reasoning_effort = "medium"\n',
             "\n",
         ]
+        # Inject alibaba provider table if not present
+        has_provider = any("[model_providers.alibaba]" in line for line in remainder)
+        if not has_provider:
+            remainder = ["\n"] + [line + "\n" for line in ALIBABA_PROVIDER_TABLE.splitlines() if line] + remainder
     return "".join(header + remainder).lstrip("\n")
 
 
