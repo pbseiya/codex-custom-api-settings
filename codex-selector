@@ -1,0 +1,282 @@
+#!/usr/bin/env python3
+"""Switch Codex CLI/TUI and ChatGPT Desktop between providers."""
+
+from __future__ import annotations
+
+import argparse
+import fcntl
+import os
+from pathlib import Path
+import shutil
+import signal
+import subprocess
+import sys
+import tempfile
+import time
+import tomllib
+
+CODEX_HOME = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex")).expanduser()
+CONFIG = CODEX_HOME / "config.toml"
+ENV_FILE = CODEX_HOME / ".env"
+CATALOG = CODEX_HOME / "model-catalog-alibaba.json"
+BACKUP_DIR = Path.home() / "projects/codex-custom-api-settings/backups/selector"
+STATE_FILE = CODEX_HOME / ".provider-mode"
+LOCK_FILE = CODEX_HOME / ".provider-selector.lock"
+
+OPENAI_MODEL = "gpt-5.6-terra"
+ALIBABA_MODEL = "qwen3.8-flash"
+ALIBABA_PROVIDER = "alibaba"
+ALIBABA_KEY_NAME = "ALIBABA_KEY"
+ALIBABA_URL = "http://10.28.15.77:4000/v1"
+TOP_LEVEL_KEYS = {
+    "model",
+    "model_provider",
+    "model_catalog_json",
+    "model_reasoning_effort",
+}
+
+
+def fail(message: str) -> "NoReturn":
+    raise SystemExit(f"codex-selector: {message}")
+
+
+def top_level_key(line: str) -> str | None:
+    stripped = line.lstrip()
+    if not stripped or stripped.startswith(("#", "[")) or "=" not in stripped:
+        return None
+    if len(line) != len(stripped):
+        return None
+    return stripped.split("=", 1)[0].strip()
+
+
+def render_config(source: str, mode: str) -> str:
+    lines = source.splitlines(keepends=True)
+    first_table = next(
+        (i for i, line in enumerate(lines) if line.lstrip().startswith("[")),
+        len(lines),
+    )
+    remainder = [
+        line
+        for line in lines[first_table:]
+        if top_level_key(line) not in TOP_LEVEL_KEYS
+    ]
+    if mode == "openai":
+        header = [
+            f'model = "{OPENAI_MODEL}"\n',
+            'model_provider = "openai"\n',
+            'model_reasoning_effort = "medium"\n',
+            "\n",
+        ]
+    else:
+        header = [
+            f'model = "{ALIBABA_MODEL}"\n',
+            f'model_provider = "{ALIBABA_PROVIDER}"\n',
+            f'model_catalog_json = "{CATALOG}"\n',
+            'model_reasoning_effort = "medium"\n',
+            "\n",
+        ]
+    return "".join(header + remainder).lstrip("\n")
+
+
+def parse_config(text: str) -> dict:
+    try:
+        return tomllib.loads(text)
+    except tomllib.TOMLDecodeError as exc:
+        fail(f"generated TOML is invalid: {exc}")
+
+
+def read_env_key(name: str) -> bool:
+    if not ENV_FILE.is_file():
+        return False
+    for raw in ENV_FILE.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        if key.strip() == name and value.strip().strip('"\''):
+            return True
+    return False
+
+
+def validate(text: str, mode: str) -> None:
+    data = parse_config(text)
+    if mode == "openai":
+        expected = {"model": OPENAI_MODEL, "model_provider": "openai"}
+        for key, value in expected.items():
+            if data.get(key) != value:
+                fail(f"invalid OpenAI setting: {key}")
+        if "model_catalog_json" in data:
+            fail("OpenAI mode must not set model_catalog_json")
+        return
+
+    if not CATALOG.is_file():
+        fail(f"missing catalog: {CATALOG}")
+    if not read_env_key(ALIBABA_KEY_NAME):
+        fail(f"{ALIBABA_KEY_NAME} is missing from {ENV_FILE}")
+    providers = data.get("model_providers", {})
+    provider = providers.get(ALIBABA_PROVIDER, {})
+    expected = {
+        "model": ALIBABA_MODEL,
+        "model_provider": ALIBABA_PROVIDER,
+        "model_catalog_json": str(CATALOG),
+    }
+    for key, value in expected.items():
+        if data.get(key) != value:
+            fail(f"invalid ALIBABA setting: {key}")
+    if provider.get("base_url") != ALIBABA_URL:
+        fail(f"{ALIBABA_PROVIDER}.base_url must be {ALIBABA_URL}")
+    if provider.get("env_key") != ALIBABA_KEY_NAME:
+        fail(f"{ALIBABA_PROVIDER}.env_key must be {ALIBABA_KEY_NAME}")
+    if provider.get("wire_api") != "responses":
+        fail(f"{ALIBABA_PROVIDER}.wire_api must be responses")
+
+
+def backup_config() -> Path:
+    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    os.chmod(BACKUP_DIR, 0o700)
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    target = BACKUP_DIR / f"config-{stamp}-{time.time_ns() % 1_000_000_000:09d}.toml"
+    shutil.copy2(CONFIG, target)
+    os.chmod(target, 0o600)
+    return target
+
+
+def atomic_write(text: str) -> None:
+    fd, name = tempfile.mkstemp(prefix=".config.toml.", dir=CODEX_HOME)
+    temp = Path(name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(temp, 0o600)
+        os.replace(temp, CONFIG)
+    finally:
+        temp.unlink(missing_ok=True)
+
+
+def active_mode() -> str:
+    if not CONFIG.is_file():
+        return "unknown"
+    data = parse_config(CONFIG.read_text(encoding="utf-8"))
+    provider = data.get("model_provider")
+    catalog = data.get("model_catalog_json")
+    if provider == ALIBABA_PROVIDER and catalog == str(CATALOG):
+        return "alibaba"
+    if provider in (None, "openai") and "model_catalog_json" not in data:
+        return "openai"
+    return "custom"
+
+
+def desktop_pids() -> list[int]:
+    result = subprocess.run(
+        ["pgrep", "-x", "ChatGPT"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    return [int(value) for value in result.stdout.split() if value.isdigit()]
+
+
+def stop_desktop() -> None:
+    pids = desktop_pids()
+    if not pids:
+        return
+    for pid in pids:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+    deadline = time.monotonic() + 12
+    while desktop_pids() and time.monotonic() < deadline:
+        time.sleep(0.25)
+    if desktop_pids():
+        fail("ChatGPT Desktop did not exit; config changed but Desktop was not restarted")
+
+
+def graphical_environment() -> dict[str, str]:
+    env = os.environ.copy()
+    if env.get("DISPLAY") or env.get("WAYLAND_DISPLAY"):
+        return env
+    result = subprocess.run(
+        ["systemctl", "--user", "show-environment"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    for raw in result.stdout.splitlines():
+        if "=" not in raw:
+            continue
+        key, value = raw.split("=", 1)
+        if key in {"DISPLAY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS", "XAUTHORITY"}:
+            env[key] = value
+    if not env.get("DISPLAY") and not env.get("WAYLAND_DISPLAY"):
+        fail("no graphical session found; open ChatGPT Desktop from the application menu")
+    return env
+
+
+def launch_desktop() -> None:
+    log_path = CODEX_HOME / "chatgpt-selector-launch.log"
+    with log_path.open("ab") as log:
+        subprocess.Popen(
+            ["chatgpt"],
+            stdin=subprocess.DEVNULL,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+            env=graphical_environment(),
+        )
+    deadline = time.monotonic() + 15
+    while not desktop_pids() and time.monotonic() < deadline:
+        time.sleep(0.25)
+    if not desktop_pids():
+        fail(f"ChatGPT Desktop did not start; inspect {log_path}")
+
+
+def switch(mode: str, restart_desktop: bool) -> None:
+    if not CONFIG.is_file():
+        fail(f"missing config: {CONFIG}")
+    source = CONFIG.read_text(encoding="utf-8")
+    candidate = render_config(source, mode)
+    validate(candidate, mode)
+    backup = backup_config()
+    atomic_write(candidate)
+    STATE_FILE.write_text(mode + "\n", encoding="utf-8")
+    os.chmod(STATE_FILE, 0o600)
+    print(f"mode={mode}")
+    print(f"backup={backup}")
+    if restart_desktop:
+        stop_desktop()
+        launch_desktop()
+        print("desktop=restarted")
+    elif desktop_pids():
+        print("desktop=running-old-config (restart required)")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Switch Codex CLI/TUI and ChatGPT Desktop providers"
+    )
+    parser.add_argument("mode", nargs="?", choices=("openai", "alibaba", "status"), default="status")
+    parser.add_argument(
+        "--restart-desktop",
+        action="store_true",
+        help="restart ChatGPT Desktop after switching",
+    )
+    args = parser.parse_args()
+
+    CODEX_HOME.mkdir(parents=True, exist_ok=True)
+    with LOCK_FILE.open("a+", encoding="utf-8") as lock:
+        try:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            fail("another selector process is running")
+        if args.mode == "status":
+            print(f"mode={active_mode()}")
+            print(f"desktop={'running' if desktop_pids() else 'stopped'}")
+            return
+        switch(args.mode, args.restart_desktop)
+
+
+if __name__ == "__main__":
+    main()

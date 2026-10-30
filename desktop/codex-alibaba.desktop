@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Codex — ALIBABA
+Comment=Switch Codex CLI, TUI, and Desktop to LiteLLM ThinkStation
+Exec=codex-selector alibaba --restart-desktop
+Icon=chatgpt
+Terminal=true
+Categories=Development;
+StartupNotify=false

@@ -1,0 +1,40 @@
+# Credentials and local environment
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Codex configuration and authentication state
+config.toml
+*.config.toml
+auth.json
+credentials.json
+models_cache.json
+sessions/
+state*/
+
+# Backups, generated state, and archives
+backups/
+.audit/
+__pycache__/
+*.py[cod]
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+*.bak
+*.backup
+
+# Logs and runtime files
+*.log
+*.pid
+*.sock
+
+# Editor and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
