@@ -132,7 +132,8 @@ requires_openai_auth = false
 
 ## Installation
 
-- **Windows**: See [INSTALL-WINDOWS.md](INSTALL-WINDOWS.md)
+- **Windows (ไม่ต้องติดตั้ง Codex CLI)**: See [QUICKSTART-WINDOWS.md](QUICKSTART-WINDOWS.md) — สำหรับเครื่องที่บริษัท block npm หรือต้องการใช้เฉพาะ ChatGPT Desktop
+- **Windows (เต็มรูปแบบ)**: See [INSTALL-WINDOWS.md](INSTALL-WINDOWS.md)
 - **Linux**: See [INSTALL-LINUX.md](INSTALL-LINUX.md)
 
 ## วิธีใช้ selector ที่ติดตั้งแล้ว
