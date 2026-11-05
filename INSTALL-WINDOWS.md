@@ -8,6 +8,32 @@
 
 ## Prerequisites
 
+### กรณี 1: ใช้ ChatGPT Desktop เท่านั้น (ไม่ต้องติดตั้ง Codex CLI)
+
+**เหมาะสำหรับ:** เครื่องที่บริษัท block การติดตั้ง npm หรือต้องการใช้เฉพาะ ChatGPT Desktop
+
+**สิ่งที่คุณต้องมี:**
+- ChatGPT Desktop (ดาวน์โหลดจาก [openai.com/chatgpt/desktop](https://openai.com/chatgpt/desktop))
+- Web browser สำหรับดาวน์โหลดไฟล์ ZIP
+- Virtual Key จากผู้ดูแล LiteLLM
+
+**หมายเหตุ:** ChatGPT Desktop มี bundled Codex runtime อยู่แล้ว ไม่ต้องติดตั้ง Codex CLI แยก
+
+### กรณี 2: ใช้ Codex CLI เต็มรูปแบบ (ต้องติดตั้ง Node.js และ npm)
+
+**เหมาะสำหรับ:** ผู้ที่ต้องการใช้ Codex CLI/TUI แบบ standalone
+
+**สิ่งที่คุณต้องมี:**
+- Node.js LTS (ติดตั้งจาก nodejs.org หรือ winget)
+- npm (มาพร้อมกับ Node.js)
+- Codex CLI (ติดตั้งผ่าน `npm install -g @openai/codex`)
+- ChatGPT Desktop (ดาวน์โหลดจาก [openai.com/chatgpt/desktop](https://openai.com/chatgpt/desktop))
+- Virtual Key จากผู้ดูแล LiteLLM
+
+---
+
+## Prerequisites (สำหรับกรณี 2 เท่านั้น)
+
 ### 1. ติดตั้ง Node.js และ npm
 
 เลือกเพียงหนึ่งวิธี
@@ -138,9 +164,30 @@ echo %USERPROFILE%\.codex
 
 ### Step 1: ดาวน์โหลด Source Code
 
-เลือกวิธีใดวิธีหนึ่งด้านล่าง:
+#### กรณี 1: ChatGPT Desktop เท่านั้น (แนะนำ Download ZIP)
 
-#### วิธีที่ 1: Git Clone (แนะนำสำหรับผู้ที่คุ้นเคยกับ git)
+ใช้ Download ZIP เพราะไม่ต้องติดตั้ง git:
+
+1. เปิด browser ไปที่: https://github.com/pbseiya/codex-custom-api-settings
+2. คลิกปุ่ม **Code** (สีเขียว) → เลือก **Download ZIP**
+3. Extract ไฟล์ ZIP (คลิกขวา → **Extract All...** หรือใช้ 7-Zip)
+4. Rename folder จาก `codex-custom-api-settings-main` เป็น `codex-custom-api-settings`:
+
+ใช้ CMD:
+```cmd
+cd %USERPROFILE%\
+rename codex-custom-api-settings-main codex-custom-api-settings
+```
+
+หรือใช้ PowerShell:
+```powershell
+cd $env:USERPROFILE
+Rename-Item codex-custom-api-settings-main codex-custom-api-settings
+```
+
+#### กรณี 2: Codex CLI เต็มรูปแบบ (เลือก Git Clone หรือ Download ZIP)
+
+**วิธีที่ 1: Git Clone** (แนะนำสำหรับผู้ที่คุ้นเคยกับ git)
 
 ใช้ CMD:
 ```cmd
@@ -160,54 +207,9 @@ cd codex-custom-api-settings
 - อัพเดตง่ายด้วย `git pull`
 - ติดตาม version และประวัติการเปลี่ยนแปลงได้
 
-**ข้อเสีย:**
-- ต้องติดตั้ง git
-- ต้อง setup GitHub authentication (SSH key หรือ Personal Access Token)
+**วิธีที่ 2: Download ZIP** (สำหรับผู้ที่ไม่มี git)
 
-#### วิธีที่ 2: Download ZIP (แนะนำสำหรับผู้ที่ไม่มี git)
-
-1. เปิด browser ไปที่: https://github.com/pbseiya/codex-custom-api-settings
-
-2. คลิกปุ่ม **Code** (สีเขียว) → เลือก **Download ZIP**
-
-3. เมื่อ download เสร็จ ให้ extract ไฟล์ ZIP:
-   - คลิกขวาที่ไฟล์ ZIP → **Extract All...** (Windows)
-   - หรือใช้โปรแกรมเช่น 7-Zip
-
-4. **สำคัญ:** GitHub จะสร้าง folder ชื่อ `codex-custom-api-settings-main` ให้ rename เป็น `codex-custom-api-settings`:
-
-ใช้ CMD:
-```cmd
-cd %USERPROFILE%
-rename codex-custom-api-settings-main codex-custom-api-settings
-```
-
-หรือใช้ PowerShell:
-```powershell
-cd $env:USERPROFILE
-Rename-Item codex-custom-api-settings-main codex-custom-api-settings
-```
-
-5. ตรวจสอบว่ามีไฟล์ครบ:
-
-ใช้ CMD:
-```cmd
-dir codex-custom-api-settings
-```
-
-หรือใช้ PowerShell:
-```powershell
-Get-ChildItem codex-custom-api-settings
-```
-
-ควรเห็น:
-- `codex-selector.ps1`
-- `codex-selector.bat`
-- `create-desktop-shortcuts.ps1`
-- `model-catalog-alibaba.json`
-- `INSTALL-WINDOWS.md`
-- `README.md`
-- และไฟล์อื่นๆ
+ทำตามขั้นตอนเดียวกับกรณี 1 ด้านบน
 
 **ข้อดี:**
 - ไม่ต้องติดตั้ง git
